@@ -318,6 +318,47 @@ bool isInstalled(string PackageName) {
 	}
 }
 
+int patchSELinux() {
+	char *source, *target, *tclass, *perm;
+	
+	string sources[2] = {"init", "system_server"};
+	string rules[9][3] = {
+		{"init", "file", "execute_no_trans"},
+		{"rootfs", "file", "execute_no_trans"},
+		{"storage_file", "lnk_file", "read"},
+		{"mnt_user_file", "lnk_file", "read"},
+		{"sdcardfs", "file", "read"},
+		{"sdcardfs", "dir", "search"},
+		{"shell_exec", "file", "execute_no_trans"},
+		{"kernel", "security", "read_policy"},
+		{"shell_exec", "file", "execute_no_trans"},
+	};
+	
+	cout<<ANSI_COLOR_BLUE;
+	
+	for (int i = 0; i < 2; i++) {
+		source = new char[sources[i].length() + 1];
+		strcpy(source, sources[i].c_str());
+		
+		for (int j = 0; j < 9; j++) {
+			target = new char[rules[j][0].length() + 1];
+			tclass = new char[rules[j][1].length() + 1];
+			perm = new char[rules[j][2].length() + 1];
+
+			strcpy(target, rules[j][0].c_str());
+			strcpy(tclass, rules[j][1].c_str());
+			strcpy(perm, rules[j][2].c_str());
+			
+			if(set_live(source, target, tclass, perm) == 1)
+				return 1;
+		}
+	}
+	
+	cout<<ANSI_COLOR_RESET;
+	
+	return 0;
+}
+
 int main() {
 	printBanner();
 	
@@ -377,11 +418,8 @@ int main() {
 			if (App_List.size() > 0) {
 				LogInfo("Injecting SELinux... \n");
 				
-				cout<<ANSI_COLOR_BLUE;
-				int selinux1 = set_live("init", "init", "file", "execute_no_trans"); // Allow Installing from Init
-				int selinux2 = set_live("system_server", "sdcardfs", "file", "read"); // Allow Installing from Shell
-				cout<<ANSI_COLOR_RESET;
-				if (selinux1 == 0 && selinux2 == 0){
+				int selinux = patchSELinux();
+				if (selinux == 0){
 					LogInfo("Success.\n\n");
 					LogInfo("Starting Restore...\n");
 					
