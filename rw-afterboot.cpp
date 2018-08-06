@@ -22,7 +22,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <dirent.h>
 #include <vector>
 #include <string>
@@ -311,7 +310,7 @@ bool isInstalled(string PackageName) {
 		return false;
 	} else {
 		string found = split_string(out,':',false)[1];
-		if (strcmp(found.c_str(), PackageName.c_str()))
+		if (strcmp(found.c_str(), PackageName.c_str()) == 0)
 			return true;
 		else
 			return false;
@@ -359,13 +358,16 @@ int patchSELinux() {
 	return 0;
 }
 
-int main() {
+int main(int argc, char** argv) {
 	printBanner();
 	
 	LogInfo("Starting RedWolf AfterBoot Binary " VERSION "...\n\n");
 	
-	LogInfo("Sleeping For 1 Minute...\n\n");
-	sleep(60);
+	if (argc == 1) {
+		LogInfo("Sleeping For 1 Minute...\n\n");
+		sleep(60);
+	}
+		
 	
 	if (!isPirate()) {
 		string restore_list_file = "/sdcard/WOLF/.BACKUPS/APPS/restore.info.dat";
@@ -397,9 +399,11 @@ int main() {
 			}
 			
 			string line;
+			int lc = 0;
+			bool restore_data = false;
 			while (getline(in, line)) {
 				string search = trim(line);
-				if (search != "" && strchr(search.c_str(),':') != NULL) {
+				if (search != "" && strchr(search.c_str(),':') != NULL && lc != 0) {
 					vector<string> splited = split_string(line,':',false);
 					
 					struct AppList app;
@@ -409,7 +413,13 @@ int main() {
 					LogInfo("\tApp Found: %s (%s)\n",splited[0].c_str(),splited[1].c_str());
 					
 					App_List.push_back(app);
+				} else if (search != "" && strchr(search.c_str(),':') != NULL && lc == 0) {
+					vector<string> splited = split_string(line,':',false);
+					
+					if (strcmp(trim(splited[1]).c_str(),"1") == 0)
+						restore_data = true;
 				}
+				lc++;
 			}
 			
 			in.close();
@@ -428,18 +438,48 @@ int main() {
 						struct AppList app = App_List[i];
 						if (isInstalled(app.Pkg_Name)) {
 							LogWarn("\tApp Already Installed: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
+							
+							if (restore_data) {
+									LogInfo("\t - Restoring Data\n");
+									string app_data_path = "data/data/" + app.Pkg_Name;
+									
+									string cmd_1 = "tar -tf '" + restore_tar_file + "' '" + app_data_path +"' 2>/dev/null";
+									
+									if(strcmp(exec(cmd_1.c_str()).c_str(),"") != 0) {
+										if (DirectoryExists(app_data_path.c_str()))
+											exec("rm -rf " + app_data_path);
+										
+										exec("tar -C / -xf '" + restore_tar_file + "' '" + app_data_path + "'");
+										exec("restorecon -R '/" + app_data_path + "'");
+									}
+								}
 						} else {
 							string cmd = "tar -tf '" + restore_tar_file + "' '" + app.App_Name +".apk' 2>/dev/null";
 							
 							if(exec(cmd.c_str())!="") {
 								LogInfo("\tInstalling App: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
 								exec("tar -C '" + tmp_dir + "' -xf '" + restore_tar_file + "' '" + app.App_Name + ".apk'");
-								const char* pm_out = exec("pm install '" + tmp_dir + "/" + app.App_Name + ".apk'").c_str();
+								string pm_out = exec("pm install '" + tmp_dir + "/" + app.App_Name + ".apk'");
 								
-								if (strcmp(pm_out,"Success")) {
+								if (restore_data) {
+									LogInfo("\t - Restoring Data\n");
+									string app_data_path = "data/data/" + app.Pkg_Name;
+									
+									string cmd_1 = "tar -tf '" + restore_tar_file + "' '" + app_data_path +"' 2>/dev/null";
+									
+									if(strcmp(exec(cmd_1.c_str()).c_str(),"") != 0) {
+										if (DirectoryExists(app_data_path.c_str()))
+											exec("rm -rf " + app_data_path);
+										
+										exec("tar -C / -xf '" + restore_tar_file + "' '" + app_data_path + "'");
+										exec("restorecon -R '/" + app_data_path + "'");
+									}
+								}
+								
+								if (strcmp(trim(pm_out).c_str(),"Success") == 0) {
 									appsRestored++;
 								} else {
-									LogError(pm_out);
+									LogError(pm_out.c_str());
 								}
 							} else {
 								LogError("\tApp Not Found in Archive: %s\n",app.App_Name.c_str());
@@ -468,7 +508,7 @@ int main() {
 				string dd_cmd = "dd if='" + restore_boot_file + "' of=/dev/block/bootdevice/by-name/boot 2>&1 > /dev/null";
 				
 				int ret = system(dd_cmd.c_str());
-				if (WEXITSTATUS(ret) == 0x10)
+				if (ret == 0)
 					LogInfo("Success.\n\n");
 				else
 					LogError("Failed!\n\n");
