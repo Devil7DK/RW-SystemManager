@@ -26,22 +26,9 @@ include $(CLEAR_VARS)
 LOCAL_MODULE					:= rw-afterboot
 LOCAL_MODULE_TAGS				:= optional
 LOCAL_SRC_FILES 				:= rw-afterboot.cpp
-LOCAL_C_INCLUDES				:= external/libcxx/include external/selinux/libsepol/include
-LOCAL_STATIC_LIBRARIES 			:= libc libselinux-inject liblog libsepol
+LOCAL_C_INCLUDES				:= external/libcxx/include
+LOCAL_STATIC_LIBRARIES 			:= libc liblog
 LOCAL_LDFLAGS 					:= -static 
 LOCAL_FORCE_STATIC_EXECUTABLE	:= true
 
 include $(BUILD_EXECUTABLE)
-
-include $(CLEAR_VARS)
-
-LOCAL_MODULE					:= libselinux-inject
-LOCAL_MODULE_TAGS				:= optional
-LOCAL_C_INCLUDES				:= external/selinux/libsepol/include
-LOCAL_SRC_FILES					:= selinux-inject.c
-LOCAL_MODULE_CLASS				:= STATIC_LIBRARIES
-LOCAL_STATIC_LIBRARIES			:= libsepol liblog
-
-include $(BUILD_STATIC_LIBRARY)
-
-

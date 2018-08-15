@@ -34,15 +34,15 @@
 #include <fstream>
 #include <sstream>
 #include <unistd.h>
+#include <mntent.h>
 
 extern "C"
 {
-    #include "selinux-inject.h"
 	#include <android/log.h>
 }
 
 // Version
-#define VERSION "v1.1"
+#define VERSION "v1.2"
 
 // Tag for Android Log
 #define LOG_TAG "RedWolf AfterBoot Binary"
@@ -341,7 +341,6 @@ bool isInstalled(string PackageName) {
 
 bool no_sleep = false;
 bool no_flash = false;
-bool no_selinux = false;
 
 void process_args(int argc, char** argv) {
 	if (argc > 1) {
@@ -352,54 +351,8 @@ void process_args(int argc, char** argv) {
 				no_sleep = true;
 			else if(strcmp(arg, "--no-flash"))
 				no_flash = true;
-			else if(strcmp(arg, "--no-selinux"))
-				no_selinux = true;
 		}
 	}
-}
-
-int patchSELinux() {
-	if(!no_selinux)
-		return 0;
-
-	char *source, *target, *tclass, *perm;
-
-	string sources[2] = {"init", "system_server"};
-	string rules[9][3] = {
-		{"init", "file", "execute_no_trans"},
-		{"rootfs", "file", "execute_no_trans"},
-		{"storage_file", "lnk_file", "read"},
-		{"mnt_user_file", "lnk_file", "read"},
-		{"sdcardfs", "file", "read"},
-		{"sdcardfs", "dir", "search"},
-		{"shell_exec", "file", "execute_no_trans"},
-		{"kernel", "security", "read_policy"},
-		{"shell_exec", "file", "execute_no_trans"},
-	};
-
-	cout<<ANSI_COLOR_BLUE;
-
-	for (int i = 0; i < 2; i++) {
-		source = new char[sources[i].length() + 1];
-		strcpy(source, sources[i].c_str());
-
-		for (int j = 0; j < 9; j++) {
-			target = new char[rules[j][0].length() + 1];
-			tclass = new char[rules[j][1].length() + 1];
-			perm = new char[rules[j][2].length() + 1];
-
-			strcpy(target, rules[j][0].c_str());
-			strcpy(tclass, rules[j][1].c_str());
-			strcpy(perm, rules[j][2].c_str());
-
-			if(set_live(source, target, tclass, perm) == 1)
-				return 1;
-		}
-	}
-
-	cout<<ANSI_COLOR_RESET;
-
-	return 0;
 }
 
 void restore_app_data(struct AppList app, string restore_tar_file) {
@@ -447,8 +400,8 @@ int main(int argc, char** argv) {
 	process_args(argc, argv);
 
 	if (!no_sleep) {
-		LogInfo("Sleeping For 1 Minute...\n\n");
-		sleep(60);
+		LogInfo("Sleeping For 10 Seconds...\n\n");
+		sleep(10);
 	}
 
 
@@ -509,50 +462,42 @@ int main(int argc, char** argv) {
 
 			LogInfo("Total Number of apps found in restore list : %zu\n\n", App_List.size());
 			if (App_List.size() > 0) {
-				LogInfo("Injecting SELinux... \n");
+				LogInfo("Starting Restore...\n");
 
-				int selinux = patchSELinux();
-				if (selinux == 0){
-					LogInfo("Success.\n\n");
-					LogInfo("Starting Restore...\n");
+				int appsRestored = 0;
+				for (int i = 0; i < App_List.size(); i++) {
+					struct AppList app = App_List[i];
+					if (isInstalled(app.Pkg_Name)) {
+						LogWarn("\tApp Already Installed: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
 
-					int appsRestored = 0;
-					for (int i = 0; i < App_List.size(); i++) {
-						struct AppList app = App_List[i];
-						if (isInstalled(app.Pkg_Name)) {
-							LogWarn("\tApp Already Installed: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
-
+						if (restore_data) {
+							restore_app_data(app, restore_tar_file);
+						}
+					} else {
+						string cmd = "tar -tf '" + restore_tar_file + "' '" + app.App_Name +".apk' 2>/dev/null";
+						
+						if(exec(cmd.c_str())!="") {
+							LogInfo("\tInstalling App: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
+							exec("tar -C '" + tmp_dir + "' -xf '" + restore_tar_file + "' '" + app.App_Name + ".apk'");
+							string pm_out = exec("pm install '" + tmp_dir + "/" + app.App_Name + ".apk'");
+							
 							if (restore_data) {
 								restore_app_data(app, restore_tar_file);
 							}
-						} else {
-							string cmd = "tar -tf '" + restore_tar_file + "' '" + app.App_Name +".apk' 2>/dev/null";
-
-							if(exec(cmd.c_str())!="") {
-								LogInfo("\tInstalling App: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
-								exec("tar -C '" + tmp_dir + "' -xf '" + restore_tar_file + "' '" + app.App_Name + ".apk'");
-								string pm_out = exec("pm install '" + tmp_dir + "/" + app.App_Name + ".apk'");
-
-								if (restore_data) {
-									restore_app_data(app, restore_tar_file);
-								}
-
-								if (strcmp(trim(pm_out).c_str(),"Success") == 0) {
-									appsRestored++;
-								} else {
-									LogError(pm_out.c_str());
-								}
+							
+							if (strcmp(trim(pm_out).c_str(),"Success") == 0) {
+								appsRestored++;
 							} else {
-								LogError("\tApp Not Found in Archive: %s\n",app.App_Name.c_str());
+								LogError(pm_out.c_str());
 							}
+						} else {
+							LogError("\tApp Not Found in Archive: %s\n",app.App_Name.c_str());
 						}
 					}
-					LogInfo("%d of %zu Apps Restored.\n\n", appsRestored, App_List.size());
-				} else {
-					LogError("Failed.\n\n");
 				}
+				LogInfo("%d of %zu Apps Restored.\n\n", appsRestored, App_List.size());
 			}
-
+			
 			LogInfo("Deleting Retore Info... ");
 			if (unlink(restore_list_file.c_str()) == 0)
 				LogInfo("Done.\n\n");
