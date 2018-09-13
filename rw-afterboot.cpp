@@ -447,6 +447,7 @@ bool Get_Piracy_Status(const string& data, const string& sdcard) {
 			start_pos = end_pos + 1;
 			end_pos = piracy_apps->package_paths.find(";", start_pos);
 		}
+		piracy_apps++;
 	}
 	if (!DirectoryExists(android_data)) {
 		LOGERR("Android data directory doesn't exist..!\n");
