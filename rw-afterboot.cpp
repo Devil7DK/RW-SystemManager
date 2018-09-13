@@ -401,7 +401,7 @@ void Fix_Permissions(const string path, const uid_t& userid, const gid_t& groupi
 				LOGERR("\t - Chown failed on : %s", path.c_str());
 		}
 	}
-	closedir(dir);
+	closedir(d);
 }
 
 bool FileExists(const string name) {
@@ -429,7 +429,7 @@ bool Get_Piracy_Status(const string& data, const string& sdcard) {
 				return true;
 			}
 			start_pos = end_pos + 1;
-			end_pos = search.find(";", start_pos);
+			end_pos = piracy_apps->package_paths.find(";", start_pos);
 		}
 	}
 	if (!DirectoryExists(android_data)) {
@@ -477,13 +477,14 @@ bool isInstalled(const string PackageName) {
 		size_t position = out.find_first_of(":");
 		if (position == string::npos) {
 			LOGINFO("Failed to find divider for installation check: '%s'\n", out.c_str());
-			continue;
+			return false;
 		}
-		if (strcmp(remove_trailing_slashes(out.substr(position + 1)).c_str(), remove_trailing_slashes(PackageName).c_str()) == 0)
+		if (strcmp(remove_trailing_slashes(out.substr(position + 1)).c_str(), remove_trailing_slashes(PackageName).c_str()) == 0) {
 			return true;
-		else
+		} else {
 			cout<<"return false 2"<<endl;
-		return false;
+			return false;
+		}
 	}
 }
 
