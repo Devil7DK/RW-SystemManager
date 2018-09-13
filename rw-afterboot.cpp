@@ -123,6 +123,14 @@ string exec(string cmd) {
     return exec(cmd.c_str());
 }
 
+void Notify(string message, bool cancelable) {
+	string command = "am startservice -e message \"";
+	command += message;
+	command += "\" -e cancel ";
+	command += cancelable ? "true" : "false";
+	command += " -n com.redwolf.helper/.NotificationService";
+	exec(command.c_str());
+}
 
 void get_paths(string parent_path, string initial_directory, vector<string> &paths)
 {
@@ -395,6 +403,8 @@ void restore_app_data(struct AppList app, string restore_tar_file) {
 int main(int argc, char** argv) {
 	printBanner();
 
+	Notify("Starting... Please Wait...", false);
+	
 	LogInfo("Starting RedWolf AfterBoot Binary " VERSION "...\n\n");
 
 	process_args(argc, argv);
@@ -403,8 +413,7 @@ int main(int argc, char** argv) {
 		LogInfo("Sleeping For 10 Seconds...\n\n");
 		sleep(10);
 	}
-
-
+	
 	if (!isPirate()) {
 		string restore_list_file = "/sdcard/WOLF/.BACKUPS/APPS/restore.info.dat";
 		string restore_tar_file = "/sdcard/WOLF/.BACKUPS/APPS/apps.tar.gz";
@@ -421,6 +430,7 @@ int main(int argc, char** argv) {
 
 		LogInfo("Checking for Files...\n\n");
 		if (!FileExists(restore_tar_file)) {
+			Notify("ERROR: Unable to find app restore archive.", true);
 			LogError("Unable to Find App Backup Archive... Aborting...!\n");
 			return 1;
 		}
@@ -430,6 +440,7 @@ int main(int argc, char** argv) {
 			ifstream in(restore_list_file);
 
 			if (!in) {
+				Notify("ERROR: Unable to open restore list.", true);
 				LogError("Unable to open restore list... Aborting...\n\n");
 				return 1;
 			}
@@ -477,6 +488,7 @@ int main(int argc, char** argv) {
 						string cmd = "tar -tf '" + restore_tar_file + "' '" + app.App_Name +".apk' 2>/dev/null";
 						
 						if(exec(cmd.c_str())!="") {
+							Notify("Restoring app: " + app.App_Name, false);
 							LogInfo("\tInstalling App: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
 							exec("tar -C '" + tmp_dir + "' -xf '" + restore_tar_file + "' '" + app.App_Name + ".apk'");
 							string pm_out = exec("pm install '" + tmp_dir + "/" + app.App_Name + ".apk'");
@@ -509,6 +521,7 @@ int main(int argc, char** argv) {
 			system(cmd_rmdir.c_str());
 
 			if (FileExists(restore_boot_file) && !no_flash) {
+				Notify("Restoring Boot Partition.", false);
 				LogInfo("Boot Partition Backup Found...");
 				LogWarn("Flashing Boot Partion... ");
 				string dd_cmd = "dd if='" + restore_boot_file + "' of=/dev/block/bootdevice/by-name/boot 2>&1 > /dev/null";
@@ -523,10 +536,12 @@ int main(int argc, char** argv) {
 			LogInfo("Restore List Not Found. Nothing to do.\n\n");
 		}
 	} else {
+		Notify("ERROR: Piracy apps found.", true);
 		LogError("Pirating Apps found on device. Aborting...\n\n");
 		return 1;
 	}
 
+	Notify("Process Finished.", true);
 	LogInfo("Finishing Process.\n\n");
 
 	return 0;
