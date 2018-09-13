@@ -94,10 +94,10 @@ void printBanner() {
 	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RED<<"               RedWolf Recovery Project              "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"======================================================="<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"|                                                     |"<<ANSI_COLOR_RESET<<endl;
-	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_CYAN<<"                    System Manager "<<VERSION<<"     "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
+	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_CYAN<<"                 System Manager "<<VERSION<<"                 "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"|                                                     |"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"======================================================="<<ANSI_COLOR_RESET<<endl;
-	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_MAGENTA<<"     (C) Copyright 2018 ATGDroid/Devil7DK             "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
+	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_MAGENTA<<"         (C) Copyright 2018 ATGDroid/Devil7DK        "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"======================================================="<<ANSI_COLOR_RESET<<endl<<endl;
 }
 
