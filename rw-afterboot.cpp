@@ -1,18 +1,20 @@
-/*
- * Copyright (C) 2018 ATGDroid/Devil7DK
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+/*==========================================================================*
+ *                                                                          *
+ *                   (C) Copyright 2018 ATGDroid/Devil7DK.                  *
+ *                                                                          *
+ * Licensed under the Apache License, Version 2.0 (the "License");          *
+ * you may not use this file except in compliance with the License.         *
+ * You may obtain a copy of the License at                                  *
+ *                                                                          *
+ *                http://www.apache.org/licenses/LICENSE-2.0                *
+ *                                                                          *
+ * Unless required by applicable law or agreed to in writing, software      *
+ * distributed under the License is distributed on an "AS IS" BASIS,        *
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. *
+ * See the License for the specific language governing permissions and      *
+ * limitations under the License.                                           *
+ *                                                                          *
+ *==========================================================================*/
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -220,6 +222,11 @@ void opendir_failure(const string& path) {
 	LOGERR("Error opening directory: '%s' (%s)\n", path.c_str(), strerror(errno));
 }
 
+bool DirectoryExists(const string name) {
+	struct stat buffer;
+	return (stat((name + "/.").c_str(), &buffer) == 0);
+}
+
 string Get_Environment_Variable(environment_variables var) {
 	const struct evn_data_type *environment = evn_data_types;
 	
@@ -227,7 +234,7 @@ string Get_Environment_Variable(environment_variables var) {
 		if (environment->env == var) {
 			char const* env = getenv(environment->env_var);
 			if (!env) {
-				if (!DirExists(environment->default_path)) {
+				if (!DirectoryExists(environment->default_path)) {
 					LOGERR("Failed to find environment variable path for '%s'\n", environment->env_var);
 					exit(1);
 				}
@@ -292,7 +299,7 @@ bool Recursive_Mkdir(const string& path) {
 			break;
 		}
 		string dir_path = path.substr(0, next_end);
-		if (!DirExists(dir_path) && mkdir(dir_path.c_str(), 0777) != 0) {
+		if (!DirectoryExists(dir_path) && mkdir(dir_path.c_str(), 0777) != 0) {
 			LOGERR("Failed to create directory: '%s' (%s)\n", dir_path.c_str(), strerror(errno));
 			return false;
 		}
@@ -402,11 +409,6 @@ bool FileExists(const string name) {
 	return (stat(name.c_str(), &buffer) == 0);
 }
 
-bool DirectoryExists(const string name) {
-	struct stat buffer;
-	return (stat((name + "/.").c_str(), &buffer) == 0);
-}
-
 void piracyWarning(const char *app) {
 	char msg[256] = "You can't use this feature of redwolf until the pirating application called '";
 	strcat(msg,app);
@@ -471,7 +473,7 @@ bool isInstalled(const string PackageName) {
 			LOGINFO("Failed to find divider for installation check: '%s'\n", out.c_str());
 			continue;
 		}
-		if (strcmp(remove_trailing_slashes(out.substr(pos + 1)).c_str(), remove_trailing_slashes(PackageName).c_str()) == 0)
+		if (strcmp(remove_trailing_slashes(out.substr(position + 1)).c_str(), remove_trailing_slashes(PackageName).c_str()) == 0)
 			return true;
 		else
 			cout<<"return false 2"<<endl;
@@ -564,8 +566,8 @@ int main(int argc, char** argv) {
 				if (position == string::npos)
 					continue;
 				struct AppList app;
-				app.App_Name = line.substr(0, pos);
-				app.Pkg_Name = line.substr(pos + 1);
+				app.App_Name = line.substr(0, position);
+				app.Pkg_Name = line.substr(position + 1);
 				
 				LOGINFO("\tApp Found: %s (%s)\n",app.App_Name.c_str(),app.Pkg_Name.c_str());
 				
@@ -575,7 +577,7 @@ int main(int argc, char** argv) {
 				if (position == string::npos) {
 					continue;
 				}
-				if (strcmp(remove_trailing_slashes(line.substr(pos + 1)).c_str(),"1") == 0)
+				if (strcmp(remove_trailing_slashes(line.substr(position + 1)).c_str(),"1") == 0)
 					restore_data = true;
 			}
 			lc++;
@@ -610,7 +612,7 @@ int main(int argc, char** argv) {
 							LOGERR(pm_out.c_str());
 						}
 					} else {
-						LOGERR("\tApp Not Found in Archive: %s\n",app.App_Name.c_str());
+						LOGERR("\tApp Not Found in Archive: %s\n", App_List.at(i).App_Name.c_str());
 					}
 				}
 			}
