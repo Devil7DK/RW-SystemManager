@@ -135,8 +135,8 @@ struct piracy_package_data_type {
 const struct piracy_package_data_type piracy_package_data_types[] = {
 	{
 		"Lucky Patcher",
-			"com.dimonvideo.luckypatcher;" 
-			"com.chelpus.lackypatch;"			
+			"com.dimonvideo.luckypatcher;"
+			"com.chelpus.lackypatch;"
 			"com.forpda.lp;"
 			"com.android.vending.billing.InAppBillingService.LUCK;"
 			"com.android.vending.billing.InAppBillingService.CLON;"
@@ -149,7 +149,7 @@ const struct piracy_package_data_type piracy_package_data_types[] = {
 		"Freedom",
 			"cc.madkite.freedom;"
 	},
-	{ 
+	{
 		"Uret Patcher",
 			"zone.jasi2169.uretpatcher;"
 			"uret.jasi2169.patcher;"
@@ -158,13 +158,13 @@ const struct piracy_package_data_type piracy_package_data_types[] = {
 	},
 	{
 		"Pirated Action Launcher 3",
-			"p.jasi2169.al3;" 
+			"p.jasi2169.al3;"
 	},
 	{
 		"Appcake",
 			"com.appcake;"
 	},
-	{ 
+	{
 		"ACMarket",
 			"ac.market.store;"
 	},
@@ -180,7 +180,7 @@ const struct piracy_package_data_type piracy_package_data_types[] = {
 	},
     {
 		"AGK",
-			"com.aag.killer;" 
+			"com.aag.killer;"
 	},
     {
 		"CheatIng Hacker",
@@ -229,7 +229,7 @@ bool DirectoryExists(const string name) {
 
 string Get_Environment_Variable(environment_variables var) {
 	const struct evn_data_type *environment = evn_data_types;
-	
+
 	while (environment->env_var) {
 		if (environment->env == var) {
 			char const* env = getenv(environment->env_var);
@@ -240,11 +240,11 @@ string Get_Environment_Variable(environment_variables var) {
 				}
 				return string(environment->default_path);
 			} else {
-				return string(env); 
+				return string(env);
 			}
 		}
 		environment++;
-	} 
+	}
 	// Shouldn't ever happen...
 	LOGERR("Unknown environment variable requested!\nFailure!\n");
 	exit(0);
@@ -253,15 +253,15 @@ string Get_Environment_Variable(environment_variables var) {
 void restorecon(const string entry, const struct stat *sb) {
 	char *current_context, *new_context;
 
-	struct selabel_handle *sehandle = selinux_android_file_context_handle();	
+	struct selabel_handle *sehandle = selinux_android_file_context_handle();
 	selinux_android_set_sehandle(sehandle);
 
 	if (lgetfilecon(entry.c_str(), &current_context) < 0)
 		LOGINFO("Couldn't get selinux context for %s\n", entry.c_str());
-	
+
 	if (selabel_lookup(sehandle, &new_context, entry.c_str(), sb->st_mode) < 0)
 		LOGINFO("Couldn't lookup selinux context for %s\n", entry.c_str());
-	
+
 	if (strcmp(current_context, new_context) != 0) {
 		if (lsetfilecon(entry.c_str(), new_context) < 0) {
 			LOGINFO("Couldn't label %s with %s: %s\n", entry.c_str(), new_context, strerror(errno));
@@ -289,7 +289,7 @@ void fix_context_recursively(const string path) {
 			fix_context_recursively(path);
 	}
 	closedir(d);
-} 
+}
 
 bool Recursive_Mkdir(const string& path) {
 	size_t prev_end = 0;
@@ -312,12 +312,12 @@ int removeDirectory(const string path) {
 	DIR *d = opendir(path.c_str());
 	int r = 0;
 	string new_path;
-	
+
 	if (d == NULL) {
 		opendir_failure(path);
 		return -1;
 	}
-	
+
 	if (d) {
 		struct dirent *p;
 		while (!r && (p = readdir(d))) {
@@ -341,7 +341,7 @@ int removeDirectory(const string path) {
 			}
 		}
 		closedir(d);
-		
+
 		if (!r)
 			r = rmdir(path.c_str());
 	}
@@ -379,10 +379,26 @@ bool Execute(const string cmd, string &result) {
 	return ret;
 }
 
+void Notify(string message, bool cancelable) {
+	string command = "am startservice -e message \"";
+	command += message;
+	command += "\" -e cancel ";
+	command += cancelable ? "true" : "false";
+	command += " -n com.redwolf.helper/.NotificationService";
+	if (!Execute(command))
+		LOGERR("Unable to push notification.\n");
+}
+
+void ClearNotification() {
+	string command = "am startservice -e clear true -n com.redwolf.helper/.NotificationService";
+	if (!Execute(command))
+		LOGERR("Unable to clear notification.\n");
+}
+
 void Fix_Permissions(const string path, const uid_t& userid, const gid_t& groupid) {
 	if (chown(path.c_str(), userid, groupid) != 0)
 		LOGERR("\t - Chown failed on : %s", path.c_str());
-	
+
 	DIR *d = opendir(path.c_str());
 	if (d == NULL) {
 		opendir_failure(path);
@@ -491,22 +507,22 @@ bool isInstalled(const string PackageName) {
 void restore_app_data(const string& env, const string PackageName, const string& restore_tar_file) {
 	LOGINFO("\t - Restoring Data\n");
 	string app_data = env + "/data/" + PackageName;
-	
+
 	if (Execute("tar -tf '" + restore_tar_file + "' '" + app_data + "'")) {
 		struct stat st;
 		bool data_exists = (stat((app_data + "/.").c_str(), &st) == 0);
 		uid_t userid;
 		gid_t groupid;
-		
+
 		if (data_exists) {
 			userid = st.st_uid;
 			groupid = st.st_gid;
 			removeDirectory(app_data);
 		}
-		
+
 		if (Execute("tar -C / -xf '" + restore_tar_file + "' '" + app_data + "'")){};
 		fix_context_recursively(app_data);
-		
+
 		if(data_exists)
 			Fix_Permissions(app_data, userid, groupid);
 	}
@@ -514,54 +530,60 @@ void restore_app_data(const string& env, const string PackageName, const string&
 
 int main(int argc, char** argv) {
 	printBanner();
-	
+	int appsRestored = 0;
+
+	Notify("Starting " LOG_TAG " " VERSION , false);
 	LOGINFO("Starting " LOG_TAG " " VERSION "...\n\n");
 	bool no_sleep = false;
-	
+
 	if (argc > 1) {
 		if(!strcmp(argv[2], "--no-sleep"))
 			no_sleep = true;
 	}
-	
+
 	if (!no_sleep) {
 		LOGINFO("Sleeping For 10 Seconds...\n\n");
 		sleep(10);
 	}
-	
+
 	string DATA_PATH = Get_Environment_Variable(ANDROID_DATA);
 	string STORAGE_PATH = Get_Environment_Variable(EXTERNAL_STORAGE);
 	string WORK_DIR = STORAGE_PATH + "/WOLF/.BACKUPS/APPS/";
 	string TMP_DIR = STORAGE_PATH + "/WOLF/tmp";
 	if (Get_Piracy_Status(DATA_PATH, STORAGE_PATH)) return 1;
-	
+
 	string restore_list_file = WORK_DIR + "restore.info.dat";
 	string restore_tar_file = WORK_DIR + "apps.tar.gz";
-	
+
 	if (DirectoryExists(TMP_DIR))
 		removeDirectory(TMP_DIR);
-	
+
 	if (!Recursive_Mkdir(TMP_DIR)) {
+		Notify("Unable to create temporary directory!", true);
 		// error message already displayed by Recursive_Mkdir()
 		return 1;
 	}
-	
+
 	std::vector<AppList> App_List;
-	
+
 	LOGINFO("Checking for Files...\n\n");
 	if (!FileExists(restore_tar_file)) {
 		LOGERR("Unable to find App Backup archive! Aborting...\n");
+		Notify("Unable to find App Backup archive!" , true);
 		return 1;
 	}
 	if (FileExists(restore_list_file)) {
 		LOGINFO("Restore List Found. Parsing List...\n");
-		
+		Notify("Parsing restore list..." , false);
+
 		ifstream in(restore_list_file);
-		
+
 		if (!in) {
 			LOGERR("Unable to open restore list... Aborting...\n\n");
+			Notify("Unable to open restore list!" , true);
 			return 1;
 		}
-		
+
 		string line;
 		int lc = 0;
 		size_t position;
@@ -575,9 +597,9 @@ int main(int argc, char** argv) {
 				struct AppList app;
 				app.App_Name = line.substr(0, position);
 				app.Pkg_Name = line.substr(position + 1);
-				
+
 				LOGINFO("\tApp Found: %s (%s)\n",app.App_Name.c_str(),app.Pkg_Name.c_str());
-				
+
 				App_List.push_back(app);
 			} else if (!line.empty() && lc == 0) {
 				position = line.find_first_of(":");
@@ -589,14 +611,13 @@ int main(int argc, char** argv) {
 			}
 			lc++;
 		}
-		
+
 		in.close();
-		
+
 		LOGINFO("Total Number of apps found in restore list : %zu\n\n", App_List.size());
 		if (App_List.size() > 0) {
 			LOGINFO("Starting Restore...\n");
-			
-			int appsRestored = 0;
+
 			for (int i = 0; i < App_List.size(); i++) {
 				if (isInstalled(App_List.at(i).Pkg_Name)) {
 					LOGWARN("\tApp Already Installed: %s (%s)\n", App_List.at(i).App_Name.c_str(), App_List.at(i).Pkg_Name.c_str());
@@ -606,13 +627,15 @@ int main(int argc, char** argv) {
 				} else {
 					if (Execute("tar -tf '" + restore_tar_file + "' '" + App_List.at(i).App_Name + ".apk'")) {
 						LOGINFO("\tInstalling App: %s (%s)\n", App_List.at(i).App_Name.c_str(), App_List.at(i).Pkg_Name.c_str());
+						Notify("Installing App: " + App_List.at(i).App_Name, false);
 						if (Execute("tar -C '" + TMP_DIR + "' -xf '" + restore_tar_file + "' '" + App_List.at(i).App_Name + ".apk'")){};
 						string pm_out;
 						Execute("pm install '" + TMP_DIR + "/" + App_List.at(i).App_Name + ".apk'", pm_out);
 						if (restore_data) {
+							Notify("Restoring App Data: " + App_List.at(i).App_Name, false);
 							restore_app_data(DATA_PATH, App_List.at(i).Pkg_Name, restore_tar_file);
 						}
-						
+
 						if (strcmp(remove_trailing_slashes(pm_out).c_str(),"Success") == 0) {
 							appsRestored++;
 						} else {
@@ -630,7 +653,12 @@ int main(int argc, char** argv) {
 	} else {
 		LOGINFO("Restore List Not Found. Nothing to do.\n\n");
 	}
-	
+
+	if (appsRestored > 0)
+		Notify("App Restore Finished. " + to_string(appsRestored) + " Apps Restored.", true);
+	else
+		ClearNotification();
+
 	LOGINFO("System Manager finished...\n\n");
 	return 0;
 }
