@@ -245,7 +245,10 @@ string Get_Environment_Variable(environment_variables var) {
 
 void restorecon(const string entry, const struct stat *sb) {
 	char *current_context, *new_context;
-	
+
+	struct selabel_handle *sehandle = selinux_android_file_context_handle();	
+	selinux_android_set_sehandle(sehandle);
+
 	if (lgetfilecon(entry.c_str(), &current_context) < 0)
 		LOGINFO("Couldn't get selinux context for %s\n", entry.c_str());
 	
