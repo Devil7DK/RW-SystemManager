@@ -26,8 +26,8 @@ include $(CLEAR_VARS)
 LOCAL_MODULE					:= rw-afterboot
 LOCAL_MODULE_TAGS				:= optional
 LOCAL_SRC_FILES 				:= rw-afterboot.cpp
-LOCAL_C_INCLUDES				:= external/libcxx/include
-LOCAL_STATIC_LIBRARIES 			:= libc liblog
+LOCAL_C_INCLUDES				:= external/libcxx/include external/selinux/libselinux/include
+LOCAL_STATIC_LIBRARIES 			:= libc liblog libselinux libcrypto
 LOCAL_LDFLAGS 					:= -static 
 LOCAL_FORCE_STATIC_EXECUTABLE	:= true
 
