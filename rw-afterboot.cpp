@@ -1,29 +1,24 @@
-/*==========================================================================*
- *                                                                          *
- *                    (C) Copyright 2018 Devil7 Softwares.                  *
- *                                                                          *
- * Licensed under the Apache License, Version 2.0 (the "License");          *
- * you may not use this file except in compliance with the License.         *
- * You may obtain a copy of the License at                                  *
- *                                                                          *
- *                http://www.apache.org/licenses/LICENSE-2.0                *
- *                                                                          *
- * Unless required by applicable law or agreed to in writing, software      *
- * distributed under the License is distributed on an "AS IS" BASIS,        *
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. *
- * See the License for the specific language governing permissions and      *
- * limitations under the License.                                           *
- *                                                                          *
- * Contributors :                                                           *
- *     Dineshkumar T                                                        *
- *     ATG Droid                                                            *
- *                                                                          *
- *==========================================================================*/
-
+/*
+ * Copyright (C) 2018 ATGDroid/Devil7DK
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+ 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <vector>
+#include <errno.h>
 #include <string>
 #include <iostream>
 #include <cstdlib>
@@ -35,6 +30,10 @@
 #include <sstream>
 #include <unistd.h>
 #include <mntent.h>
+#include <selinux/selinux.h>
+#include <selinux/label.h>
+#include <selinux/android.h>
+
 
 extern "C"
 {
@@ -42,10 +41,10 @@ extern "C"
 }
 
 // Version
-#define VERSION "v1.2"
+#define VERSION "V1.3"
 
 // Tag for Android Log
-#define LOG_TAG "RedWolf AfterBoot Binary"
+#define LOG_TAG "RedWolf System Manager"
 
 // Colors for Output
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -58,7 +57,7 @@ extern "C"
 
 using namespace std;
 
-void LogInfo(const char *fmt, ...) {
+void LOGINFO(const char* fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
 	printf(ANSI_COLOR_GREEN);
@@ -68,7 +67,7 @@ void LogInfo(const char *fmt, ...) {
 	va_end(ap);
 }
 
-void LogWarn(const char *fmt, ...) {
+void LOGWARN(const char* fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
 	printf(ANSI_COLOR_YELLOW);
@@ -78,7 +77,7 @@ void LogWarn(const char *fmt, ...) {
 	va_end(ap);
 }
 
-void LogError(const char *fmt, ...) {
+void LOGERR(const char* fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
 	printf(ANSI_COLOR_RED);
@@ -93,224 +92,327 @@ void printBanner() {
 	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RED<<"               RedWolf Recovery Project              "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"======================================================="<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"|                                                     |"<<ANSI_COLOR_RESET<<endl;
-	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_CYAN<<"      AfterBoot Binary for Special Actions. "<<VERSION<<"     "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
+	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_CYAN<<"                    System Manager "<<VERSION<<"     "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"|                                                     |"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"======================================================="<<ANSI_COLOR_RESET<<endl;
-	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_MAGENTA<<"     (C) Copyright 2018 Devil7 Softwares             "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
-	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_MAGENTA<<"                        RedWolf Recovery Project     "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
-	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_MAGENTA<<"                        ATG Droid                    "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
+	cout<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_MAGENTA<<"     (C) Copyright 2018 ATGDroid/Devil7DK             "<<ANSI_COLOR_BLUE<<"|"<<ANSI_COLOR_RESET<<endl;
 	cout<<ANSI_COLOR_BLUE<<"======================================================="<<ANSI_COLOR_RESET<<endl<<endl;
 }
 
 struct AppList {
-	std::string App_Name;
-	std::string Pkg_Name;
+	string App_Name;
+	string Pkg_Name;
 };
 
-string exec(const char* cmd) {
-    array<char, 128> buffer;
-    string result;
-    shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
-    if (!pipe) return "error";
-    while (!feof(pipe.get())) {
-        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
-            result += buffer.data();
-    }
-    return result;
-}
+enum environment_variables {
+	ANDROID_ROOT,
+	ANDROID_DATA,
+	EXTERNAL_STORAGE,
+	ANDROID_STORAGE
+};
 
-string exec(string cmd) {
-    return exec(cmd.c_str());
-}
+struct evn_data_type {
+    const char *env_var;
+    enum environment_variables env;
+    const string default_path;
+};
 
-void Notify(string message, bool cancelable) {
-	string command = "am startservice -e message \"";
-	command += message;
-	command += "\" -e cancel ";
-	command += cancelable ? "true" : "false";
-	command += " -n com.redwolf.helper/.NotificationService";
-	exec(command.c_str());
-}
+const struct evn_data_type evn_data_types[] = {
+    { "ANDROID_ROOT", ANDROID_ROOT, "/system" },
+    { "ANDROID_DATA", ANDROID_DATA, "/data" },
+    { "EXTERNAL_STORAGE", EXTERNAL_STORAGE, "/sdcard" },
+    { "ANDROID_STORAGE", ANDROID_STORAGE, "/storage" },
+    { NULL, /* break */ },
+};
 
-void get_paths(string parent_path, string initial_directory, vector<string> &paths)
+struct piracy_package_data_type {
+    const char *app_name;
+    const string package_paths;
+};
+
+const struct piracy_package_data_type piracy_package_data_types[] = {
+    { "Lucky Patcher", "com.dimonvideo.luckypatcher;" 
+                                    "com.chelpus.lackypatch;"
+                                    "com.forpda.lp;"
+                                    "com.android.vending.billing.InAppBillingService.LUCK;"
+                                    "com.android.vending.billing.InAppBillingService.CLON;"
+                                    "com.android.vending.billing.InAppBillingService.LOCK;"
+                                    "com.android.vending.billing.InAppBillingService.CRAC;"
+                                    "com.android.vending.billing.InAppBillingService.LACK;"
+                                    "com.android.vending.billing.InAppBillingService.COIN;"
+},
+    { "Freedom", "cc.madkite.freedom;" },
+    { "Uret Patcher", "zone.jasi2169.uretpatcher;"
+                                 "uret.jasi2169.patcher;"
+                                 "com.android.vendinc;"
+                                 "com.android.vendind;"
+},
+    { "Pirated Action Launcher 3", "p.jasi2169.al3;" },
+    { "Appcake", "com.appcake;" },
+    { "ACMarket", "ac.market.store;" },
+    { "Game Hacker", "org.sbtools.gamehack;" },
+    { "Game Killer", "cn.lm.sq;" 
+                                "com.killerapp.gamekiller;"
+                                "com.zune.gamekiller;"
+},
+    { "AGK", "com.aag.killer;" },
+    { "CheatIng Hacker", "net.schwarzis.game_cih;" },
+    { "Creeplays Hack", "org.creeplays.hack;" },
+    { "Base App", "com.baseappfull.fwd;" },
+    { "Zm App", "com.zmapp;" },
+    
+    { "MarketMod", "com.dv.marketmod.installer;" },
+    { "Mobilism", "org.mobilism.android;" },
+    { "Blackmart", "org.blackmart.market;" 
+                             "com.blackmartalpha;"
+},
+    
+    { NULL, /* break */ },
+};
+
+
+void opendir_failure(const string& path)
 {
-    string dirToOpen = parent_path + initial_directory;
-    auto dir = opendir(dirToOpen.c_str());
+	LOGERR("Error opening directory: '%s' (%s)\n", path.c_str(), strerror(errno));
+}
 
-    parent_path = dirToOpen + "/";
+string Get_Environment_Variable(environment_variables var)
+{
+	const struct evn_data_type *environment = evn_data_types;
+	
+	while (environment->env_var) {
+           if (environment->env == var) {
+           	char const* env = getenv(environment->env_var);
+               if (!env) {
+               if (!DirExists(environment->default_path)) {
+               LOGERR("Failed to find environment variable path for '%s'\n", environment->env_var);
+               exit(1);
+               }
+              return string(environment->default_path);
+              } else {
+              return string(env); 
+              }
+            }
+        environment++;
+    } 
+    // Shouldn't ever happen...
+    LOGERR("Unknown environment variable requested!\nFailure!\n");
+    exit(0);
+}
 
-    paths.push_back(dirToOpen);
+void restorecon(const string entry, const struct stat *sb) {
+	char *current_context, *new_context;
 
-    if(NULL == dir)
-    {
-        return;
-    }
-
-    auto entity = readdir(dir);
-
-    while(entity != NULL)
-    {
-		if(entity->d_type == DT_DIR) {
-			if(strcmp(entity->d_name, ".") != 0 && strcmp(entity->d_name, "..") != 0) {
-				get_paths(parent_path, string(entity->d_name), paths);
-			}
-		} else if(entity->d_type == DT_REG) {
-			paths.push_back(parent_path + entity->d_name);
+	if (lgetfilecon(entry.c_str(), &current_context) < 0)
+		LOGINFO("Couldn't get selinux context for %s\n", entry.c_str());
+		
+	if (selabel_lookup(sehandle, &new_context, entry.c_str(), sb->st_mode) < 0)
+		LOGINFO("Couldn't lookup selinux context for %s\n", entry.c_str());
+		
+	if (strcmp(current_context, new_context) != 0) {
+		if (lsetfilecon(entry.c_str(), new_context) < 0) {
+			LOGINFO("Couldn't label %s with %s: %s\n", entry.c_str(), new_context, strerror(errno));
 		}
+	}
+	freecon(current_context);
+	freecon(new_context);
+}
 
-		entity = readdir(dir);
+void fix_context_recursively(const string path) {
+	DIR *d = opendir(path.c_str());
+	if (d == NULL) {
+		opendir_failure(path);
+		return;
+	}
+	struct dirent *de;
+	struct stat sb;
+	string local;
+    while ((de = readdir(d)) != NULL) {
+    if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+    local = path + "/";
+	local.append(de->d_name);
+	restorecon(path, &sb);
+	if (de->d_type == DT_DIR)
+	fix_context_recursively(path);
+	}
+	closedir(d);
+} 
+
+bool Recursive_Mkdir(const string& path) {
+  size_t prev_end = 0;
+  while (prev_end < path.size()) {
+    size_t next_end = path.find('/', prev_end + 1);
+    if (next_end == string::npos) {
+      break;
+    }
+      string dir_path = path.substr(0, next_end);
+      if (!DirExists(dir_path) && mkdir(dir_path.c_str(), 0777) != 0) {
+        LOGERR("Failed to create directory: '%s' (%s)\n", dir_path.c_str(), strerror(errno));
+        return false;
+    }
+    prev_end = next_end;
+  }
+  return true;
+}
+
+int removeDirectory(const string path) {
+	DIR *d = opendir(path.c_str());
+	int r = 0;
+	string new_path;
+
+	if (d == NULL) {
+		opendir_failure(path);
+		return -1;
 	}
 
-    parent_path.resize(parent_path.length() - 1 - initial_directory.length());
-    closedir(dir);
-}
-
-bool DirectoryExists( const char* pzPath )
-{
-    if ( pzPath == NULL) return false;
-
-    DIR *pDir;
-    bool bExists = false;
-
-    pDir = opendir (pzPath);
-
-    if (pDir != NULL)
-    {
-        bExists = true;
-        (void) closedir (pDir);
-    }
-
-    return bExists;
-}
-
-bool FileExists(const string& name) {
-  struct stat buffer;
-  return (stat (name.c_str(), &buffer) == 0);
-}
-
-void piracyWarning(const char *app) {
-	char msg[200] = "You can't use this feature of redwolf until the pirating application called '";
-	strcat(msg,app);
-	strcat(msg,"' is uninstalled from your device!\n\n");
-	LogError(msg);
-}
-
-bool isPirate() {
-	string piracy_apps[30] = {"cc.madkite.freedom", "zone.jasi2169.uretpatcher",
-							"uret.jasi2169.patcher", "p.jasi2169.al3", "com.dimonvideo.luckypatcher",
-							"com.chelpus.lackypatch", "com.forpda.lp", "com.android.vending.billing.InAppBillingService.LUCK",
-							"com.android.vending.billing.InAppBillingService.CLON", "com.android.vending.billing.InAppBillingService.LOCK",
-							"com.android.vending.billing.InAppBillingService.CRAC", "com.android.vending.billing.InAppBillingService.LACK",
-							"com.android.vendinc", "com.appcake", "ac.market.store", "org.sbtools.gamehack", "com.zune.gamekiller",
-							"com.aag.killer", "com.killerapp.gamekiller", "cn.lm.sq", "net.schwarzis.game_cih", "org.creeplays.hack",
-							"com.baseappfull.fwd", "com.zmapp", "com.dv.marketmod.installer", "org.mobilism.android", "com.blackmartalpha",
-							"org.blackmart.market", "com.android.vendind", "com.android.vending.billing.InAppBillingService.COIN"};
-	string data_dirs[2] = {"/data/data", "/sdcard/Android/data"};
-
-	string pirateApp = "";
-
-	for (int i = 0; i < 2; i++) {
-		for (int j = 0; j < 30; j++) {
-			if (DirectoryExists(((string)data_dirs[i] + "/" + piracy_apps[j]).c_str())) {
-				switch (j) {
-					case 0:
-						pirateApp = "Freedom";
-						break;
-					case 1:
-					case 2:
-					case 12:
-					case 28:
-						pirateApp = "Uret Patcher";
-						break;
-					case 3:
-						pirateApp = "Pirated Action Launcher 3";
-						break;
-					case 4 ... 11:
-					case 29:
-						pirateApp = "Lucky Patcher";
-						break;
-					case 13:
-						pirateApp = "Appcake";
-						break;
-					case 14:
-						pirateApp = "ACMarket";
-						break;
-					case 15:
-						pirateApp = "Game Hacker";
-						break;
-					case 16:
-					case 18:
-					case 19:
-						pirateApp = "Game Killer";
-						break;
-					case 17:
-						pirateApp = "AGK";
-						break;
-					case 20:
-						pirateApp = "CheatIng Hacker";
-						break;
-					case 21:
-						pirateApp = "Creeplays Hack";
-						break;
-					case 22:
-						pirateApp = "Base App";
-						break;
-					case 23:
-						pirateApp = "Zm App";
-						break;
-					case 24:
-						pirateApp = "MarketMod";
-						break;
-					case 25:
-						pirateApp = "Mobilism";
-						break;
-					case 26:
-					case 27:
-						pirateApp = "Blackmart";
-						break;
+	if (d) {
+		struct dirent *p;
+		while (!r && (p = readdir(d))) {
+			if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+				continue;
+			new_path = path + "/";
+			new_path.append(p->d_name);
+			if (p->d_type == DT_DIR) {
+				r = removeDirectory(new_path);
+				if (!r) {
+					if (p->d_type == DT_DIR)
+						r = rmdir(new_path.c_str());
+					else
+					    LOGERR("Unable to remove directory: '%s' (%s)\n", new_path.c_str(), strerror(errno));
+				}
+			} else if (p->d_type == DT_REG || p->d_type == DT_LNK || p->d_type == DT_FIFO || p->d_type == DT_SOCK) {
+				r = unlink(new_path.c_str());
+				if (r != 0) {
+					LOGERR("Unable to unlink: '%s' (%s)\n", new_path.c_str(), strerror(errno));
 				}
 			}
 		}
-	}
+		closedir(d);
 
-	if (pirateApp == "") {
-		if (exec("ls /data/lp/lp_utils /data/data/*/lp/lp_utils 2> /dev/null") == "") {
-			return false;
-		} else {
-			piracyWarning("Lucky Patcher");
-			return true;
+		if (!r)
+	    r = rmdir(path.c_str());
+	}
+	return r;
+}
+
+bool Execute(const string cmd) {
+	FILE* exec;
+	bool ret = false;
+	char buffer[130];
+	exec = popen(cmd.c_str(), "r");
+	if (!exec) return ret;
+	while (!feof(exec)) {
+		if (fgets(buffer, 128, exec) != NULL) {
+			if (!ret) ret = true;
 		}
-	} else {
-		piracyWarning(pirateApp.c_str());
-		return true;
 	}
+	pclose(exec);
+	return ret;
 }
 
-vector<string> split_string(const string &in, char del, bool skip_empty) {
-        vector<string> res;
-
-        if (in.empty() || del == '\0')
-                return res;
-
-        string field;
-        istringstream f(in);
-        if (del == '\n') {
-                while (getline(f, field)) {
-                        if (field.empty() && skip_empty)
-                                continue;
-                        res.push_back(field);
-                }
-        } else {
-                while (getline(f, field, del)) {
-                        if (field.empty() && skip_empty)
-                                continue;
-                        res.push_back(field);
-                }
-        }
-        return res;
+bool Execute(const string cmd, string &result) {
+	FILE* exec;
+	bool ret = false;
+	char buffer[130];
+	exec = popen(cmd.c_str(), "r");
+	if (!exec) return ret;
+	while (!feof(exec)) {
+		if (fgets(buffer, 128, exec) != NULL) {
+			result += buffer;
+			if (!ret) ret = true;
+		}
+	}
+	pclose(exec);
+	return ret;
 }
 
-string trim(string s) {
+
+void Fix_Permissions(const string path, const uid_t& userid, const gid_t& groupid)
+{
+	if (chown(path.c_str(), userid, groupid) != 0)
+	LOGERR("\t - Chown failed on : %s", path.c_str());
+	
+	DIR *d = opendir(path.c_str());
+	if (d == NULL) {
+		opendir_failure(path);
+		return;
+	}
+	struct dirent* de;
+	string local;
+    while ((de = readdir(d)) != NULL)
+    {
+    	if(strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+        local = path + "/";
+        local.append(de->d_name);
+		if(de->d_type == DT_DIR) {
+		Fix_Permissions(local, userid, groupid);
+	    } else if (de->d_type == DT_REG) {
+			if (chown(path.c_str(), userid, groupid) != 0)
+	            LOGERR("\t - Chown failed on : %s", path.c_str());
+		}
+	}
+    closedir(dir);
+}
+
+bool FileExists(const string name) {
+  struct stat buffer;
+  return (stat(name.c_str(), &buffer) == 0);
+}
+
+bool DirectoryExists(const string name) {
+  struct stat buffer;
+  return (stat((name + "/.").c_str(), &buffer) == 0);
+}
+
+
+void piracyWarning(const char *app) {
+	char msg[256] = "You can't use this feature of redwolf until the pirating application called '";
+	strcat(msg,app);
+	strcat(msg,"' is uninstalled from your device!\n\n");
+	LOGERR(msg);
+}
+
+bool Get_Piracy_Status(const string& data, const string& sdcard) {
+     const struct piracy_package_data_type *piracy_apps = piracy_package_data_types;
+     size_t start_pos, end_pos;
+     string path, android_data = data + "/data";
+    while (piracy_apps->app_name) {
+    	start_pos = 0, end_pos = piracy_apps->package_paths.find(";", start_pos);
+        while (end_pos != string::npos && start_pos < piracy_apps->package_paths.size()) {
+        path = piracy_apps->package_paths.substr(start_pos, end_pos - start_pos);
+        if (DirectoryExists(android_data + "/" + path) || DirectoryExists(sdcard + "/Android/data/" + path)) {
+        piracyWarning(piracy_apps->app_name);
+        return true;
+    }
+    start_pos = end_pos + 1;
+    end_pos = search.find(";", start_pos);
+ }
+}
+if (!DirectoryExists(android_data)) return;
+string folder_path;
+DIR* d;
+struct dirent* de;
+d = opendir(android_data.c_str());
+if (d == NULL) return;
+while ((de = readdir(d)) != NULL)
+{
+   if (de->d_type == DT_DIR && strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
+   folder_path = android_data + "/";
+   folder_path.append(de->d_name);
+   if (FileExists(folder_path + "/lp/lp_utils"))
+   goto app_found;
+ }
+}
+if (FileExists(data + "/lp/lp_utils")) goto app_found;
+closedir (d);
+return false;
+app_found:
+closedir (d);
+piracyWarning("Lucky Patcher");
+return true;
+}
+
+string remove_trailing_slashes(string s) {
 	s.erase(s.begin(), find_if(s.begin(), s.end(),
             not1(ptr_fun<int, int>(isspace))));
 	s.erase(find_if(s.rbegin(), s.rend(),
@@ -318,26 +420,17 @@ string trim(string s) {
     return s;
 }
 
-void trim(char* str) {
-    int start = 0;
-    char* buffer = str;
-    while (*str && *str++ == ' ') ++start;
-    while (*str++);
-    int end = str - buffer - 1;
-    while (end > 0 && buffer[end - 1] == ' ') --end;
-    buffer[end] = 0;
-    if (end <= start || start == 0) return; // exit if no leading spaces or string is now empty
-    str = buffer + start;
-    while ((*buffer++ = *str++));  // remove leading spaces: K&R
-}
-
-bool isInstalled(string PackageName) {
-	string out = exec("pm list packages \"" + PackageName + "\" 2>/dev/null");
-	if (out.empty()) {
+bool isInstalled(const string PackageName) {
+	string out;
+	if (!Execute("pm list packages \"" + PackageName + "\"", out))
 		return false;
 	} else {
-		string found = split_string(out,':',false)[1];
-		if (strcmp(trim(found).c_str(), trim(PackageName).c_str()) == 0)
+		size_t position = out.find_first_of(":");
+		if (position == string::npos) {
+			LOGINFO("Failed to find divider for installation check: '%s'\n", out.c_str());
+            continue;
+            }
+		if (strcmp(remove_trailing_slashes(out.substr(pos + 1)).c_str(), remove_trailing_slashes(PackageName).c_str()) == 0)
 			return true;
 		else
 			cout<<"return false 2"<<endl;
@@ -345,125 +438,103 @@ bool isInstalled(string PackageName) {
 	}
 }
 
-// Variables for processing main args...
+void restore_app_data(const string& env, const string PackageName, const string& restore_tar_file) {
+	LOGINFO("\t - Restoring Data\n");
+	string app_data = env + "/data/" + PackageName;
 
-bool no_sleep = false;
-bool no_flash = false;
-
-void process_args(int argc, char** argv) {
-	if (argc > 1) {
-		for (int i = 1; i < argc; i++) {
-			char *arg = argv[i];
-
-			if(strcmp(arg, "--no-sleep"))
-				no_sleep = true;
-			else if(strcmp(arg, "--no-flash"))
-				no_flash = true;
-		}
-	}
-}
-
-void restore_app_data(struct AppList app, string restore_tar_file) {
-	LogInfo("\t - Restoring Data\n");
-	string app_data_path1 = "data/data/" + app.Pkg_Name;
-	string app_data_path2 = "/data/data/" + app.Pkg_Name;
-
-	string cmd_1 = "tar -tf '" + restore_tar_file + "' '" + app_data_path1 +"' 2>/dev/null";
-
-	if(strcmp(exec(cmd_1.c_str()).c_str(),"") != 0) {
-		bool data_exists = DirectoryExists(app_data_path2.c_str());
+	if (Execute("tar -tf '" + restore_tar_file + "' '" + app_data + "'") {
+		struct stat st;
+		bool data_exists = (stat((app_data + "/.").c_str(), &st) == 0);
 		uid_t userid;
 		gid_t groupid;
 
 		if (data_exists) {
-			struct stat info;
-			stat(app_data_path2.c_str(), &info);
-
-			userid = info.st_uid;
-			groupid = info.st_gid;
-
-			exec("rm -rf " + app_data_path2);
+			userid = st.st_uid;
+			groupid = st.st_gid;
+			removeDirectory(app_data);
 		}
 
-		exec("tar -C / -xf '" + restore_tar_file + "' '" + app_data_path1 + "'");
-		exec("restorecon -R '" + app_data_path2 + "' 2>&1 >/dev/null");
+		if (Execute("tar -C / -xf '" + restore_tar_file + "' '" + app_data + "'")){};
+		fix_context_recursively(app_data);
 
-		if(data_exists) {
-			vector<string> paths;
-			get_paths(app_data_path2, "", paths);
-
-			for(string i : paths) {
-				if (chown(i.c_str(), userid, groupid) != 0)
-					LogError("\t - Chown failed on : %s", app.Pkg_Name.c_str());
-			}
-		}
+		    if(data_exists)
+			Fix_Permissions(app_data, userid, groupid);
 	}
 }
 
 int main(int argc, char** argv) {
 	printBanner();
 
-	Notify("Starting... Please Wait...", false);
-	
-	LogInfo("Starting RedWolf AfterBoot Binary " VERSION "...\n\n");
-
-	process_args(argc, argv);
+	LOGINFO("Starting " LOG_TAG " " VERSION "...\n\n");
+    bool no_sleep = false;
+    
+	if (argc > 1) {
+		if(!strcmp(argv[2], "--no-sleep"))
+			no_sleep = true;
+	}
 
 	if (!no_sleep) {
-		LogInfo("Sleeping For 10 Seconds...\n\n");
+		LOGINFO("Sleeping For 10 Seconds...\n\n");
 		sleep(10);
 	}
 	
-	if (!isPirate()) {
-		string restore_list_file = "/sdcard/WOLF/.BACKUPS/APPS/restore.info.dat";
-		string restore_tar_file = "/sdcard/WOLF/.BACKUPS/APPS/apps.tar.gz";
-		string restore_boot_file = "/sdcard/WOLF/.BACKUPS/APPS/boot.img.bak";
-		string tmp_dir = "/sdcard/WOLF/tmp";
+	string DATA_PATH = Get_Environment_Variable(ANDROID_DATA);
+	string STORAGE_PATH = Get_Environment_Variable(EXTERNAL_STORAGE);
+	string WORK_DIR = STORAGE_PATH + "/WOLF/.BACKUPS/APPS/";
+	string TMP_DIR = STORAGE_PATH + "/WOLF/tmp";
+    if (Get_Piracy_Status(DATA_PATH, STORAGE_PATH)) return 1;
+    
+	    string restore_list_file = WORK_DIR + "restore.info.dat";
+		string restore_tar_file = WORK_DIR + "apps.tar.gz";
+        
+        if (DirectoryExists(TMP_DIR))
+        removeDirectory(TMP_DIR);
 
-		if (!DirectoryExists(tmp_dir.c_str())) {
-			LogInfo("Creating Temp Dir...\n\n");
-			string cmd = "mkdir -p " + tmp_dir;
-			system(cmd.c_str());
-		}
+			if (!Recursive_Mkdir(TMP_DIR)) {
+			// error message already displayed by Recursive_Mkdir()
+			return 1;
+			}
 
 		std::vector<AppList> App_List;
 
-		LogInfo("Checking for Files...\n\n");
+		LOGINFO("Checking for Files...\n\n");
 		if (!FileExists(restore_tar_file)) {
-			Notify("ERROR: Unable to find app restore archive.", true);
-			LogError("Unable to Find App Backup Archive... Aborting...!\n");
+			LOGERR("Unable to find App Backup archive! Aborting...\n");
 			return 1;
 		}
 		if (FileExists(restore_list_file)) {
-			LogInfo("Restore List Found. Parsing List...\n");
+			LOGINFO("Restore List Found. Parsing List...\n");
 
 			ifstream in(restore_list_file);
 
 			if (!in) {
-				Notify("ERROR: Unable to open restore list.", true);
-				LogError("Unable to open restore list... Aborting...\n\n");
+				LOGERR("Unable to open restore list... Aborting...\n\n");
 				return 1;
 			}
 
 			string line;
 			int lc = 0;
+			size_t position;
 			bool restore_data = false;
 			while (getline(in, line)) {
-				string search = trim(line);
-				if (search != "" && strchr(search.c_str(),':') != NULL && lc != 0) {
-					vector<string> splited = split_string(line,':',false);
-
+				line = remove_trailing_slashes(line);
+				if (!line.empty() && lc != 0) {
+			        position = line.find_first_of(":");
+                    if (position == string::npos)
+                    continue;
 					struct AppList app;
-					app.App_Name = trim(splited[0]);
-					app.Pkg_Name = trim(splited[1]);
+					app.App_Name = line.substr(0, pos);
+					app.Pkg_Name = line.substr(pos + 1);
 
-					LogInfo("\tApp Found: %s (%s)\n",splited[0].c_str(),splited[1].c_str());
+					LOGINFO("\tApp Found: %s (%s)\n",app.App_Name.c_str(),app.Pkg_Name.c_str());
 
 					App_List.push_back(app);
-				} else if (search != "" && strchr(search.c_str(),':') != NULL && lc == 0) {
-					vector<string> splited = split_string(line,':',false);
-
-					if (strcmp(trim(splited[1]).c_str(),"1") == 0)
+				} else if (!line.empty() && lc == 0) {
+					position = line.find_first_of(":");
+                    if (position == string::npos) {
+                    continue;
+                    }
+					if (strcmp(remove_trailing_slashes(line.substr(pos + 1)).c_str(),"1") == 0)
 						restore_data = true;
 				}
 				lc++;
@@ -471,78 +542,45 @@ int main(int argc, char** argv) {
 
 			in.close();
 
-			LogInfo("Total Number of apps found in restore list : %zu\n\n", App_List.size());
+			LOGINFO("Total Number of apps found in restore list : %zu\n\n", App_List.size());
 			if (App_List.size() > 0) {
-				LogInfo("Starting Restore...\n");
+				LOGINFO("Starting Restore...\n");
 
 				int appsRestored = 0;
 				for (int i = 0; i < App_List.size(); i++) {
-					struct AppList app = App_List[i];
-					if (isInstalled(app.Pkg_Name)) {
-						LogWarn("\tApp Already Installed: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
-
+					if (isInstalled(App_List.at(i).Pkg_Name)) {
+						LOGWARN("\tApp Already Installed: %s (%s)\n", App_List.at(i).App_Name.c_str(), App_List.at(i).Pkg_Name.c_str());
 						if (restore_data) {
-							restore_app_data(app, restore_tar_file);
+							restore_app_data(DATA_PATH, App_List.at(i).Pkg_Name, restore_tar_file);
 						}
 					} else {
-						string cmd = "tar -tf '" + restore_tar_file + "' '" + app.App_Name +".apk' 2>/dev/null";
-						
-						if(exec(cmd.c_str())!="") {
-							Notify("Restoring app: " + app.App_Name, false);
-							LogInfo("\tInstalling App: %s (%s)\n", app.App_Name.c_str(), app.Pkg_Name.c_str());
-							exec("tar -C '" + tmp_dir + "' -xf '" + restore_tar_file + "' '" + app.App_Name + ".apk'");
-							string pm_out = exec("pm install '" + tmp_dir + "/" + app.App_Name + ".apk'");
-							
+						if (Execute("tar -tf '" + restore_tar_file + "' '" + App_List.at(i).App_Name + ".apk'") {
+							LOGINFO("\tInstalling App: %s (%s)\n", App_List.at(i).App_Name.c_str(), App_List.at(i).Pkg_Name.c_str());
+							if (Execute("tar -C '" + TMP_DIR + "' -xf '" + restore_tar_file + "' '" + App_List.at(i).App_Name + ".apk'"){};
+							string pm_out;
+							Execute("pm install '" + TMP_DIR + "/" + App_List.at(i).App_Name + ".apk'", pm_out);
 							if (restore_data) {
-								restore_app_data(app, restore_tar_file);
+								restore_app_data(DATA_PATH, App_List.at(i).Pkg_Name, restore_tar_file);
 							}
 							
-							if (strcmp(trim(pm_out).c_str(),"Success") == 0) {
+							if (strcmp(remove_trailing_slashes(pm_out).c_str(),"Success") == 0) {
 								appsRestored++;
 							} else {
-								LogError(pm_out.c_str());
+								LOGERR(pm_out.c_str());
 							}
 						} else {
-							LogError("\tApp Not Found in Archive: %s\n",app.App_Name.c_str());
+							LOGERR("\tApp Not Found in Archive: %s\n",app.App_Name.c_str());
 						}
 					}
 				}
-				LogInfo("%d of %zu Apps Restored.\n\n", appsRestored, App_List.size());
+				LOGINFO("%d of %zu Apps Restored.\n\n", appsRestored, App_List.size());
 			}
-			
-			LogInfo("Deleting Retore Info... ");
-			if (unlink(restore_list_file.c_str()) == 0)
-				LogInfo("Done.\n\n");
-			else
-				LogError("Failed!\n\n");
-
-			LogInfo("Deleting Temp Dir... \n\n");
-			string cmd_rmdir = "rm -rf " + tmp_dir;
-			system(cmd_rmdir.c_str());
-
-			if (FileExists(restore_boot_file) && !no_flash) {
-				Notify("Restoring Boot Partition.", false);
-				LogInfo("Boot Partition Backup Found...");
-				LogWarn("Flashing Boot Partion... ");
-				string dd_cmd = "dd if='" + restore_boot_file + "' of=/dev/block/bootdevice/by-name/boot 2>&1 > /dev/null";
-
-				int ret = system(dd_cmd.c_str());
-				if (ret == 0)
-					LogInfo("Success.\n\n");
-				else
-					LogError("Failed!\n\n");
-			}
+			unlink(restore_list_file.c_str());
+			removeDirectory(TMP_DIR);
 		} else {
-			LogInfo("Restore List Not Found. Nothing to do.\n\n");
+			LOGINFO("Restore List Not Found. Nothing to do.\n\n");
 		}
-	} else {
-		Notify("ERROR: Piracy apps found.", true);
-		LogError("Pirating Apps found on device. Aborting...\n\n");
-		return 1;
-	}
-
-	Notify("Process Finished.", true);
-	LogInfo("Finishing Process.\n\n");
-
+	
+    LOGINFO("System Manager finished...\n\n");
 	return 0;
 }
