@@ -432,12 +432,18 @@ bool Get_Piracy_Status(const string& data, const string& sdcard) {
 			end_pos = search.find(";", start_pos);
 		}
 	}
-	if (!DirectoryExists(android_data)) return;
+	if (!DirectoryExists(android_data)) {
+		LOGERR("Android data directory doesn't exist..!\n");
+		return false;
+	}
 	string folder_path;
 	DIR* d;
 	struct dirent* de;
 	d = opendir(android_data.c_str());
-	if (d == NULL) return;
+	if (d == NULL) {
+		LOGERR("Unable to open android data directory..!\n");
+		return false;
+	}
 	while ((de = readdir(d)) != NULL) {
 		if (de->d_type == DT_DIR && strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
 			folder_path = android_data + "/";
